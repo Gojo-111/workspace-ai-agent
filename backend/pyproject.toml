@@ -1,0 +1,37 @@
+[project]
+name = "workspace-ai-agent"
+version = "0.1.0"
+description = "AI agent for working with Google Workspace"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "psycopg[binary]",
+    "alembic",
+    "pydantic",
+    "pydantic-settings",
+    "langgraph",
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "cryptography",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
