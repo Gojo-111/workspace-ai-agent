@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.settings import settings
 from app.middleware.csrf import CSRFMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware, RateLimiter
 
 
 app = FastAPI(
@@ -20,6 +21,17 @@ app.add_middleware(
 
 
 app.add_middleware(CSRFMiddleware)
+
+rate_limiter = RateLimiter(
+    default_limit=60,
+    default_window_seconds=60,
+)
+
+
+app.add_middleware(
+    RateLimitMiddleware,
+    limiter=rate_limiter,
+)
 
 
 @app.get("/health")
