@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.database.base import Base
 from app.database.session import get_db
-from app.database.models.user import User
+from app.models.user import User
 from app.main import app
 from app.config.settings import settings
 

@@ -10,10 +10,18 @@ WORKDIR /app
 COPY pyproject.toml ./
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir ".[test]"
 
 # Copy the application source.
 COPY app/ ./app/
+
+# Copy the test source.
+COPY tests/ ./tests/
+
+# Copy Alembic configuration and migrations.
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
+
 
 # The backend listens on port 8000.
 EXPOSE 8000
