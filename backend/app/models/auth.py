@@ -9,5 +9,5 @@ class AuthMeResponse(BaseModel):
 
 
 class IntegrationStatusResponse(BaseModel):
-    provider: str
+    provider: strgit st
     connected: bool
