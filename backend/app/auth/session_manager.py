@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 from fastapi import Response
 from sqlalchemy import select
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import settings
 from app.models.session import Session as SessionModel
@@ -12,8 +12,8 @@ from app.models.session import Session as SessionModel
 SESSION_COOKIE_NAME = "waa_session"
 
 
-def create_session(
-    db: DBSession,
+async def create_session(
+    db: AsyncSession,
     user_id: UUID,
     response: Response,
 ) -> tuple[SessionModel, str]:
@@ -24,7 +24,9 @@ def create_session(
     remains server-side in PostgreSQL.
     """
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(seconds=settings.SESSION_TTL_SECONDS)
+    expires_at = now + timedelta(
+        seconds=settings.SESSION_TTL_SECONDS,
+    )
 
     session = SessionModel(
         id=uuid4(),
@@ -35,8 +37,7 @@ def create_session(
     )
 
     db.add(session)
-    db.commit()
-    db.refresh(session)
+    await db.flush()
 
     cookie_value = str(session.id)
 
@@ -53,15 +54,15 @@ def create_session(
     return session, cookie_value
 
 
-def get_session(
-    db: DBSession,
+async def get_session(
+    db: AsyncSession,
     cookie_value: str | None,
 ) -> SessionModel | None:
     """
     Look up a session from its cookie value.
 
-    Expiration is always checked server-side. An expired session is revoked
-    and never returned to the caller.
+    Expiration is checked server-side. An expired session is deleted and
+    never returned to the caller.
     """
     if not cookie_value:
         return None
@@ -71,9 +72,13 @@ def get_session(
     except ValueError:
         return None
 
-    session = db.scalar(
-        select(SessionModel).where(SessionModel.id == session_id)
+    result = await db.execute(
+        select(SessionModel).where(
+            SessionModel.id == session_id,
+        )
     )
+
+    session = result.scalar_one_or_none()
 
     if session is None:
         return None
@@ -81,29 +86,33 @@ def get_session(
     now = datetime.now(timezone.utc)
 
     if session.expires_at <= now:
-        db.delete(session)
-        db.commit()
+        await db.delete(session)
+        await db.flush()
         return None
 
     session.last_active = now
-    db.commit()
+    await db.flush()
 
     return session
 
 
-def revoke_session(
-    db: DBSession,
+async def revoke_session(
+    db: AsyncSession,
     session_id: UUID,
     response: Response | None = None,
 ) -> None:
     """Immediately revoke a server-side session and optionally clear its cookie."""
-    session = db.scalar(
-        select(SessionModel).where(SessionModel.id == session_id)
+    result = await db.execute(
+        select(SessionModel).where(
+            SessionModel.id == session_id,
+        )
     )
 
+    session = result.scalar_one_or_none()
+
     if session is not None:
-        db.delete(session)
-        db.commit()
+        await db.delete(session)
+        await db.flush()
 
     if response is not None:
         response.delete_cookie(
@@ -112,3 +121,4 @@ def revoke_session(
             secure=settings.COOKIE_SECURE,
             samesite=settings.COOKIE_SAMESITE,
         )
+

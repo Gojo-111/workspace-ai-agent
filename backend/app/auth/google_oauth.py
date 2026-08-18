@@ -17,6 +17,7 @@ GOOGLE_OAUTH_SCOPES = [
 
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 def build_google_consent_url(state: str) -> str:
@@ -58,3 +59,28 @@ async def exchange_code_for_tokens(code: str) -> dict:
         raise ValueError("Google token response did not contain an access token")
 
     return token_data
+
+
+async def fetch_google_user_info(access_token: str) -> dict:
+    """Fetch the Google account identity associated with an access token."""
+    if not access_token:
+        raise ValueError("Access token is required")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+    response.raise_for_status()
+
+    user_info = response.json()
+
+    if not user_info.get("id") or not user_info.get("email"):
+        raise ValueError(
+            "Google userinfo response missing required identity fields"
+        )
+
+    return user_info

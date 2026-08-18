@@ -1,8 +1,6 @@
-from uuid import UUID
-
 from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.session_manager import get_session
 from app.database.session import get_db
@@ -12,8 +10,8 @@ from app.models.user import User
 SESSION_COOKIE_NAME = "waa_session"
 
 
-def get_current_user(
-    db: DBSession = Depends(get_db),
+async def get_current_user(
+    db: AsyncSession = Depends(get_db),
     session_cookie: str | None = Cookie(
         default=None,
         alias=SESSION_COOKIE_NAME,
@@ -22,10 +20,10 @@ def get_current_user(
     """
     Return the authenticated user associated with the server-side session.
 
-    The user identity always comes from the session stored in PostgreSQL.
+    The user identity always comes from the server-side session.
     A client-supplied user_id is never trusted.
     """
-    session = get_session(db, session_cookie)
+    session = await get_session(db, session_cookie)
 
     if session is None:
         raise HTTPException(
@@ -33,9 +31,11 @@ def get_current_user(
             detail="Authentication required",
         )
 
-    user = db.scalar(
+    result = await db.execute(
         select(User).where(User.id == session.user_id)
     )
+
+    user = result.scalar_one_or_none()
 
     if user is None:
         raise HTTPException(
