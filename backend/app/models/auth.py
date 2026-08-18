@@ -1,6 +1,5 @@
 from pydantic import BaseModel
 
-
 class AuthMeResponse(BaseModel):
     authenticated: bool
     user_id: str | None = None
@@ -9,5 +8,5 @@ class AuthMeResponse(BaseModel):
 
 
 class IntegrationStatusResponse(BaseModel):
-    provider: strgit st
+    provider: str
     connected: bool
