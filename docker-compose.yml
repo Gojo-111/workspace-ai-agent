@@ -20,6 +20,7 @@ services:
       POSTGRES_PASSWORD: workspace
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U workspace -d workspace_ai_agent"]
       interval: 5s
