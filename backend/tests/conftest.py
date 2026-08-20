@@ -15,7 +15,7 @@ from app.config.settings import settings
 
 
 test_engine = create_async_engine(
-    settings.database_url,
+    settings.test_database_url or settings.database_url,
     pool_pre_ping=True,
 )
 

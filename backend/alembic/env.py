@@ -10,7 +10,13 @@ from app.database.base import Base
 from app.models.oauth_token import OAuthToken
 from app.models.session import Session
 from app.models.user import User
-
+from app.models.oauth_token import OAuthToken
+from app.models.session import Session
+from app.models.user import User
+from app.models.conversation import Conversation
+from app.models.message import Message
+from app.models.workflow import Workflow
+from app.models.audit_log import AuditLog
 
 config = context.config
 
