@@ -25,7 +25,7 @@ async def create_session(
     """
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(
-        seconds=settings.SESSION_TTL_SECONDS,
+        seconds=settings.session_ttl_seconds,
     )
 
     session = SessionModel(
@@ -45,9 +45,9 @@ async def create_session(
         key=SESSION_COOKIE_NAME,
         value=cookie_value,
         httponly=True,
-        secure=settings.COOKIE_SECURE,
-        samesite=settings.COOKIE_SAMESITE,
-        max_age=settings.SESSION_TTL_SECONDS,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        max_age=settings.session_ttl_seconds,
         expires=expires_at,
     )
 
@@ -118,7 +118,7 @@ async def revoke_session(
         response.delete_cookie(
             key=SESSION_COOKIE_NAME,
             httponly=True,
-            secure=settings.COOKIE_SECURE,
-            samesite=settings.COOKIE_SAMESITE,
+            secure=settings.cookie_secure,
+            samesite=settings.cookie_samesite,
         )
 

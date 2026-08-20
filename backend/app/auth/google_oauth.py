@@ -23,8 +23,8 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 def build_google_consent_url(state: str) -> str:
     """Build the Google OAuth consent-screen URL."""
     params = {
-        "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "client_id": settings.google_client_id,
+        "redirect_uri": settings.google_redirect_uri,
         "response_type": "code",
         "scope": " ".join(GOOGLE_OAUTH_SCOPES),
         "access_type": "offline",
@@ -42,9 +42,9 @@ async def exchange_code_for_tokens(code: str) -> dict:
 
     data = {
         "code": code,
-        "client_id": settings.GOOGLE_CLIENT_ID,
-        "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "redirect_uri": settings.google_redirect_uri,
         "grant_type": "authorization_code",
     }
 
@@ -82,5 +82,26 @@ async def fetch_google_user_info(access_token: str) -> dict:
         raise ValueError(
             "Google userinfo response missing required identity fields"
         )
+
+    return user_info
+    
+
+async def get_google_user_info(access_token: str) -> dict:
+    """Fetch the Google account's id, email, and name using an access token."""
+    if not access_token:
+        raise ValueError("Access token is required")
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    response.raise_for_status()
+
+    user_info = response.json()
+
+    if "id" not in user_info or "email" not in user_info:
+        raise ValueError("Google userinfo response missing required fields")
 
     return user_info

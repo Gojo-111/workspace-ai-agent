@@ -56,8 +56,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 key=CSRF_COOKIE_NAME,
                 value=csrf_cookie,
                 httponly=False,
-                secure=settings.COOKIE_SECURE,
-                samesite=settings.COOKIE_SAMESITE,
+                secure=settings.cookie_secure,
+                samesite=settings.cookie_samesite,
             )
 
         return response

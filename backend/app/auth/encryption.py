@@ -5,7 +5,7 @@ from app.config.settings import settings
 
 def _get_fernet() -> Fernet:
     """Create the Fernet cipher using the configured token encryption key."""
-    return Fernet(settings.TOKEN_ENCRYPTION_KEY)
+    return Fernet(settings.token_encryption_key)
 
 
 def encrypt_token(plaintext: str) -> str:
