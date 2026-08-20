@@ -9,12 +9,18 @@ class Settings(BaseSettings):
 
     google_client_id: str
     google_client_secret: str
+    google_redirect_uri: str
+    auth_success_redirect_url: str = "http://localhost:8000/auth/success"
 
     openai_api_key: str | None = None
     ollama_base_url: str | None = None
     ai_provider: Literal["openai", "ollama"]
 
     cors_allowed_origin: str
+
+    session_ttl_seconds: int = 60 * 60 * 24 *14
+    cookie_secure: bool = False
+    cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
     model_config = SettingsConfigDict(
         env_file=".env",
