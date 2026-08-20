@@ -126,11 +126,12 @@ class IntegrationService:
         if token_record is None:
             return
 
-        access_token = decrypt_token(
-            token_record.access_token_encrypted
-        )
+        tokens = {
+            "access_token": decrypt_token(token_record.access_token_encrypted),
+            "refresh_token": decrypt_token(token_record.refresh_token_encrypted),
+        }
 
-        await self._revoke_google_token(access_token)
+        await self._revoke_google_token(tokens)
 
         await self.db.execute(
             delete(OAuthToken).where(
@@ -156,40 +157,39 @@ class IntegrationService:
 
     async def _revoke_google_token(
         self,
-        access_token: str,
+        tokens: dict[str, str],
     ) -> None:
         """
-        Revoke Google's OAuth grant.
+        Revoke both the access and refresh token at Google.
 
-        Google accepts either an access token or refresh token at the
-        revocation endpoint. Using the access token is sufficient when it
-        corresponds to the stored refresh token.
+        Google's docs say revoking an access token also revokes its paired
+        refresh token, but that's an implementation detail, not something
+        worth depending on for the thing that matters most if it leaks.
+        Revoking both explicitly means disconnect is guaranteed to kill the
+        grant either way.
         """
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                GOOGLE_REVOKE_URL,
-                data={"token": access_token},
-                headers={
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-            )
+            for token_type, token_value in tokens.items():
+                response = await client.post(
+                    GOOGLE_REVOKE_URL,
+                    data={"token": token_value},
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
 
-        if response.status_code == 200:
-            return
+                if response.status_code == 200:
+                    continue
 
-        # Google documents invalid_token as meaning the token is already
-        # expired or revoked. In that case the desired end state is already
-        # true, so local credentials can safely be removed.
-        if response.status_code == 400:
-            try:
-                error_data = response.json()
-            except ValueError:
-                error_data = {}
+                if response.status_code == 400:
+                    try:
+                        error_data = response.json()
+                    except ValueError:
+                        error_data = {}
 
-            if error_data.get("error") == "invalid_token":
-                return
+                    if error_data.get("error") == "invalid_token":
+                        # Already revoked or expired, the end state we want.
+                        continue
 
-        raise RuntimeError(
-            f"Google token revocation failed with status "
-            f"{response.status_code}"
-        )
+                raise RuntimeError(
+                    f"Google token revocation failed for {token_type} with status "
+                    f"{response.status_code}"
+                )

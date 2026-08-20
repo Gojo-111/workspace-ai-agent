@@ -18,7 +18,7 @@ def create_oauth_state(response: Response) -> str:
         key=OAUTH_STATE_COOKIE_NAME,
         value=state,
         httponly=True,
-        secure=settings.COOKIE_SECURE,
+        secure=settings.cookie_secure,
         samesite="lax",
         max_age=OAUTH_STATE_MAX_AGE,
     )
@@ -44,7 +44,7 @@ def validate_oauth_state(
     response.delete_cookie(
         key=OAUTH_STATE_COOKIE_NAME,
         httponly=True,
-        secure=settings.COOKIE_SECURE,
+        secure=settings.cookie_secure,
         samesite="lax",
     )
 
