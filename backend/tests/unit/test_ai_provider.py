@@ -9,12 +9,14 @@ from app.ai.ollama_provider import OllamaProvider
 
 @pytest.mark.asyncio
 async def test_provider_factory_returns_openai():
-    with patch("app.ai.provider_factory.settings") as mock_settings:
-        mock_settings.ai_provider = "openai"
-        mock_settings.openai_api_key = "sk-test"
+    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_openai_class:
+        with patch("app.ai.provider_factory.settings") as mock_settings:
+            mock_settings.ai_provider = "openai"
+            mock_settings.openai_api_key = "sk-dummy"
 
-        provider = get_provider()
-        assert isinstance(provider, OpenAIProvider)
+            provider = get_provider()
+            assert isinstance(provider, OpenAIProvider)
+            mock_openai_class.assert_called_once_with(api_key="sk-dummy")
 
 
 @pytest.mark.asyncio
@@ -47,12 +49,12 @@ async def test_provider_factory_raises_when_openai_key_missing():
 
 @pytest.mark.asyncio
 async def test_openai_provider_generate_returns_content():
-    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_client_class:
+    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_openai_class:
         mock_client = MagicMock()
         mock_chat = MagicMock()
-        mock_completions = MagicMock()
+        mock_completions = AsyncMock()
 
-        # Mock the response
+        # Mock response
         mock_response = MagicMock()
         mock_choice = MagicMock()
         mock_message = MagicMock()
@@ -64,7 +66,7 @@ async def test_openai_provider_generate_returns_content():
         mock_completions.create.return_value = mock_response
         mock_chat.completions = mock_completions
         mock_client.chat = mock_chat
-        mock_client_class.return_value = mock_client
+        mock_openai_class.return_value = mock_client
 
         provider = OpenAIProvider()
         result = await provider.generate(
@@ -77,12 +79,11 @@ async def test_openai_provider_generate_returns_content():
 
 @pytest.mark.asyncio
 async def test_openai_provider_generate_returns_tool_calls():
-    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_client_class:
+    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_openai_class:
         mock_client = MagicMock()
         mock_chat = MagicMock()
-        mock_completions = MagicMock()
+        mock_completions = AsyncMock()
 
-        # Mock a tool call response
         mock_response = MagicMock()
         mock_choice = MagicMock()
         mock_message = MagicMock()
@@ -101,7 +102,7 @@ async def test_openai_provider_generate_returns_tool_calls():
         mock_completions.create.return_value = mock_response
         mock_chat.completions = mock_completions
         mock_client.chat = mock_chat
-        mock_client_class.return_value = mock_client
+        mock_openai_class.return_value = mock_client
 
         provider = OpenAIProvider()
         result = await provider.generate(
@@ -117,12 +118,12 @@ async def test_openai_provider_generate_returns_tool_calls():
 
 @pytest.mark.asyncio
 async def test_openai_provider_stream_yields_chunks():
-    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_client_class:
+    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_openai_class:
         mock_client = MagicMock()
         mock_chat = MagicMock()
-        mock_completions = MagicMock()
+        mock_completions = AsyncMock()
 
-        # Mock a streaming response
+        # Mock an async iterator that yields chunks
         mock_chunk1 = MagicMock()
         mock_delta1 = MagicMock()
         mock_delta1.content = "Hello"
@@ -138,7 +139,6 @@ async def test_openai_provider_stream_yields_chunks():
         mock_delta3.content = "!"
         mock_chunk3.choices = [MagicMock(delta=mock_delta3)]
 
-        # Mock async iterator
         async def mock_stream():
             for chunk in [mock_chunk1, mock_chunk2, mock_chunk3]:
                 yield chunk
@@ -146,7 +146,7 @@ async def test_openai_provider_stream_yields_chunks():
         mock_completions.create.return_value = mock_stream()
         mock_chat.completions = mock_completions
         mock_client.chat = mock_chat
-        mock_client_class.return_value = mock_client
+        mock_openai_class.return_value = mock_client
 
         provider = OpenAIProvider()
         chunks = []
@@ -218,7 +218,6 @@ async def test_ollama_provider_stream_yields_chunks():
     with patch("app.ai.ollama_provider.AsyncClient") as mock_client_class:
         mock_client = MagicMock()
 
-        # Mock the streaming response
         async def mock_stream():
             yield {"message": {"content": "Hello"}}
             yield {"message": {"content": " from"}}
