@@ -9,14 +9,16 @@ from app.ai.ollama_provider import OllamaProvider
 
 @pytest.mark.asyncio
 async def test_provider_factory_returns_openai():
-    with patch("app.ai.openai_provider.AsyncOpenAI") as mock_openai_class:
-        with patch("app.ai.provider_factory.settings") as mock_settings:
-            mock_settings.ai_provider = "openai"
-            mock_settings.openai_api_key = "sk-dummy"
-
-            provider = get_provider()
-            assert isinstance(provider, OpenAIProvider)
-            mock_openai_class.assert_called_once_with(api_key="sk-dummy")
+    # Patch the settings in both the factory (to pass the check) and the provider (to actually use the key)
+    with patch("app.ai.provider_factory.settings") as mock_factory_settings:
+        mock_factory_settings.ai_provider = "openai"
+        mock_factory_settings.openai_api_key = "sk-dummy"
+        with patch("app.ai.openai_provider.settings") as mock_provider_settings:
+            mock_provider_settings.openai_api_key = "sk-dummy"
+            with patch("app.ai.openai_provider.AsyncOpenAI") as mock_openai_class:
+                provider = get_provider()
+                assert isinstance(provider, OpenAIProvider)
+                mock_openai_class.assert_called_once_with(api_key="sk-dummy")
 
 
 @pytest.mark.asyncio
