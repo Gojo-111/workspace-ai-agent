@@ -232,8 +232,8 @@ async def test_docs_update_replace_paragraph(mock_db, user_id):
             "documentId": "doc123",
             "body": {
                 "content": [
-                    {"startIndex": 1, "endIndex": 6, "paragraph": {}},
-                    {"startIndex": 6, "endIndex": 11, "paragraph": {}},
+                    {"startIndex": 1, "endIndex": 6, "paragraph": {"dummy": True}},
+                    {"startIndex": 6, "endIndex": 11, "paragraph": {"dummy": True}},
                 ]
             },
         }

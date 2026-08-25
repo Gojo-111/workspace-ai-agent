@@ -344,7 +344,7 @@ async def analyze(
     if not values:
         return {
             "spreadsheet_id": spreadsheet_id,
-            "range": range,
+            "range": range_str,
             "row_count": 0,
             "column_count": 0,
             "columns": [],
@@ -419,7 +419,7 @@ async def analyze(
 
     return {
         "spreadsheet_id": spreadsheet_id,
-        "range": range,
+        "range": range_str,
         "row_count": len(values),
         "column_count": max_cols,
         "columns": analysis,
