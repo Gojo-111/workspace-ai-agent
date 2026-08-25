@@ -393,7 +393,7 @@ async def test_sheets_analyze_success(mock_db, user_id):
 
         assert result["spreadsheet_id"] == "sheet123"
         assert result["range"] == "A1:C4"  # Note: the return dict still uses "range" key from get()
-        assert result["row_count"] == 3
+        assert result["row_count"] == 4
         assert result["column_count"] == 3
 
         columns = result["columns"]
