@@ -5,7 +5,7 @@ Unit tests for the Google service layer (drive, docs, sheets, gmail).
 All external network calls are mocked. We verify that each wrapper:
 - Calls the correct underlying Google API method with the right arguments.
 - Handles 404 (Not Found) by raising a ValueError with a friendly message.
-- Handles other HttpErrors by re-raising them (so the caller can decide).
+- Handles other HttpErrors by re-raising them.
 """
 
 import pytest
@@ -31,7 +31,6 @@ def user_id():
 
 @pytest.fixture
 def mock_db():
-    """A dummy AsyncSession – not actually used because we mock get_google_client."""
     return MagicMock()
 
 
@@ -42,13 +41,15 @@ def mock_db():
 @pytest.mark.asyncio
 async def test_drive_search_success(mock_db, user_id):
     with patch("app.google.drive.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.files().list().execute.return_value = {
+        mock_files = MagicMock()
+        mock_files.list.return_value.execute.return_value = {
             "files": [
                 {"id": "file1", "name": "resume.pdf", "mimeType": "application/pdf"},
                 {"id": "file2", "name": "cover.docx", "mimeType": "application/docx"},
             ]
         }
+        mock_client = MagicMock()
+        mock_client.files.return_value = mock_files
         mock_get_client.return_value = mock_client
 
         result = await drive_search(mock_db, user_id, "resume", page_size=2)
@@ -57,7 +58,7 @@ async def test_drive_search_success(mock_db, user_id):
             {"id": "file1", "name": "resume.pdf", "mimeType": "application/pdf"},
             {"id": "file2", "name": "cover.docx", "mimeType": "application/docx"},
         ]
-        mock_client.files().list.assert_called_once_with(
+        mock_files.list.assert_called_once_with(
             q="name contains 'resume' and trashed = false",
             pageSize=2,
             fields="files(id,name,mimeType,webViewLink,modifiedTime)",
@@ -67,19 +68,21 @@ async def test_drive_search_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_drive_get_file_success(mock_db, user_id):
     with patch("app.google.drive.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.files().get().execute.return_value = {
+        mock_files = MagicMock()
+        mock_files.get.return_value.execute.return_value = {
             "id": "file123",
             "name": "project_plan.gsheet",
             "mimeType": "application/vnd.google-apps.spreadsheet",
         }
+        mock_client = MagicMock()
+        mock_client.files.return_value = mock_files
         mock_get_client.return_value = mock_client
 
         result = await drive_get_file(mock_db, user_id, "file123")
 
         assert result["id"] == "file123"
         assert result["name"] == "project_plan.gsheet"
-        mock_client.files().get.assert_called_once_with(
+        mock_files.get.assert_called_once_with(
             fileId="file123",
             fields="id,name,mimeType,webViewLink,modifiedTime",
         )
@@ -88,10 +91,12 @@ async def test_drive_get_file_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_drive_get_file_not_found(mock_db, user_id):
     with patch("app.google.drive.get_google_client") as mock_get_client:
+        mock_files = MagicMock()
+        mock_files.get.return_value.execute.side_effect = HttpError(
+            resp=MagicMock(status=404), content=b'Not Found'
+        )
         mock_client = MagicMock()
-        # Simulate a 404 HttpError
-        error = HttpError(resp=MagicMock(status=404), content=b'Not Found')
-        mock_client.files().get().execute.side_effect = error
+        mock_client.files.return_value = mock_files
         mock_get_client.return_value = mock_client
 
         with pytest.raises(ValueError, match="Drive file not found: missing123"):
@@ -101,10 +106,12 @@ async def test_drive_get_file_not_found(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_drive_get_file_permission_denied(mock_db, user_id):
     with patch("app.google.drive.get_google_client") as mock_get_client:
+        mock_files = MagicMock()
+        mock_files.get.return_value.execute.side_effect = HttpError(
+            resp=MagicMock(status=403), content=b'Forbidden'
+        )
         mock_client = MagicMock()
-        # Simulate a 403 HttpError (forbidden)
-        error = HttpError(resp=MagicMock(status=403), content=b'Forbidden')
-        mock_client.files().get().execute.side_effect = error
+        mock_client.files.return_value = mock_files
         mock_get_client.return_value = mock_client
 
         with pytest.raises(HttpError):
@@ -118,17 +125,20 @@ async def test_drive_get_file_permission_denied(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_docs_get_success(mock_db, user_id):
     with patch("app.google.docs.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.documents().get().execute.return_value = {
+        mock_docs = MagicMock()
+        # Proper document structure with startIndex/endIndex for each content element
+        mock_docs.get.return_value.execute.return_value = {
             "documentId": "doc123",
             "title": "My Doc",
             "body": {
                 "content": [
-                    {"paragraph": {"elements": [{"textRun": {"content": "Hello "}}]}},
-                    {"paragraph": {"elements": [{"textRun": {"content": "World!"}}]}},
+                    {"startIndex": 1, "endIndex": 6, "paragraph": {"elements": [{"textRun": {"content": "Hello "}}]}},
+                    {"startIndex": 6, "endIndex": 12, "paragraph": {"elements": [{"textRun": {"content": "World!"}}]}},
                 ]
             },
         }
+        mock_client = MagicMock()
+        mock_client.documents.return_value = mock_docs
         mock_get_client.return_value = mock_client
 
         result = await docs_get(mock_db, user_id, "doc123")
@@ -136,15 +146,18 @@ async def test_docs_get_success(mock_db, user_id):
         assert result["document_id"] == "doc123"
         assert result["title"] == "My Doc"
         assert result["content"] == "Hello World!"
-        mock_client.documents().get.assert_called_once_with(documentId="doc123")
+        mock_docs.get.assert_called_once_with(documentId="doc123")
 
 
 @pytest.mark.asyncio
 async def test_docs_get_not_found(mock_db, user_id):
     with patch("app.google.docs.get_google_client") as mock_get_client:
+        mock_docs = MagicMock()
+        mock_docs.get.return_value.execute.side_effect = HttpError(
+            resp=MagicMock(status=404), content=b'Not Found'
+        )
         mock_client = MagicMock()
-        error = HttpError(resp=MagicMock(status=404), content=b'Not Found')
-        mock_client.documents().get().execute.side_effect = error
+        mock_client.documents.return_value = mock_docs
         mock_get_client.return_value = mock_client
 
         with pytest.raises(ValueError, match="Google Doc not found: missing_doc"):
@@ -154,23 +167,31 @@ async def test_docs_get_not_found(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_docs_create_success(mock_db, user_id):
     with patch("app.google.docs.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.documents().create().execute.return_value = {
+        mock_docs = MagicMock()
+        mock_docs.create.return_value.execute.return_value = {
             "documentId": "new_doc_123",
             "title": "Test Doc",
         }
+        mock_client = MagicMock()
+        mock_client.documents.return_value = mock_docs
         mock_get_client.return_value = mock_client
+
+        # We also need to mock the batchUpdate call that happens inside create
+        mock_batch = MagicMock()
+        mock_batch.update.return_value.execute.return_value = {}
+        mock_docs.batchUpdate.return_value = mock_batch
 
         result = await docs_create(mock_db, user_id, "Test Doc", content="Initial content")
 
         assert result["document_id"] == "new_doc_123"
         assert result["title"] == "Test Doc"
-        mock_client.documents().create.assert_called_once_with(body={"title": "Test Doc"})
-        # Also verify the insertText request was made (if content provided)
-        mock_client.documents().batchUpdate.assert_called_once()
-        batch_call_args = mock_client.documents().batchUpdate.call_args
-        assert batch_call_args[1]["documentId"] == "new_doc_123"
-        requests = batch_call_args[1]["body"]["requests"]
+        mock_docs.create.assert_called_once_with(body={"title": "Test Doc"})
+
+        # Verify batchUpdate was called with the insertText request
+        mock_docs.batchUpdate.assert_called_once()
+        call_args = mock_docs.batchUpdate.call_args
+        assert call_args[1]["documentId"] == "new_doc_123"
+        requests = call_args[1]["body"]["requests"]
         assert requests[0]["insertText"]["location"]["index"] == 1
         assert requests[0]["insertText"]["text"] == "Initial content"
 
@@ -178,21 +199,25 @@ async def test_docs_create_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_docs_update_append(mock_db, user_id):
     with patch("app.google.docs.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        # First call: get document to find end index
-        mock_client.documents().get().execute.return_value = {
+        mock_docs = MagicMock()
+        mock_docs.get.return_value.execute.return_value = {
             "documentId": "doc123",
             "body": {"content": [{"endIndex": 10}]},
         }
+        mock_client = MagicMock()
+        mock_client.documents.return_value = mock_docs
         mock_get_client.return_value = mock_client
+
+        mock_batch = MagicMock()
+        mock_batch.update.return_value.execute.return_value = {}
+        mock_docs.batchUpdate.return_value = mock_batch
 
         result = await docs_update(mock_db, user_id, "doc123", " appended", mode="append")
 
         assert result["document_id"] == "doc123"
         assert result["mode"] == "append"
-        # Verify batchUpdate was called with insertText at the end
-        mock_client.documents().batchUpdate.assert_called_once()
-        args = mock_client.documents().batchUpdate.call_args
+        mock_docs.batchUpdate.assert_called_once()
+        args = mock_docs.batchUpdate.call_args
         requests = args[1]["body"]["requests"]
         assert requests[0]["insertText"]["location"]["index"] == 9  # endIndex-1
         assert requests[0]["insertText"]["text"] == " appended"
@@ -201,29 +226,33 @@ async def test_docs_update_append(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_docs_update_replace_paragraph(mock_db, user_id):
     with patch("app.google.docs.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        # Simulate document with two paragraphs
-        mock_client.documents().get().execute.return_value = {
+        mock_docs = MagicMock()
+        # Document with two paragraphs, each with start/end indices
+        mock_docs.get.return_value.execute.return_value = {
             "documentId": "doc123",
             "body": {
                 "content": [
-                    {"startIndex": 1, "endIndex": 5, "paragraph": {}},
-                    {"startIndex": 5, "endIndex": 10, "paragraph": {}},
+                    {"startIndex": 1, "endIndex": 6, "paragraph": {}},
+                    {"startIndex": 6, "endIndex": 11, "paragraph": {}},
                 ]
             },
         }
+        mock_client = MagicMock()
+        mock_client.documents.return_value = mock_docs
         mock_get_client.return_value = mock_client
+
+        mock_batch = MagicMock()
+        mock_batch.update.return_value.execute.return_value = {}
+        mock_docs.batchUpdate.return_value = mock_batch
 
         await docs_update(mock_db, user_id, "doc123", "new text", mode="replace_paragraph", paragraph_number=2)
 
-        # It should delete the content of paragraph 2 (from startIndex to endIndex-1)
-        # and insert the new text at startIndex
-        batch_call = mock_client.documents().batchUpdate.call_args
+        batch_call = mock_docs.batchUpdate.call_args
         requests = batch_call[1]["body"]["requests"]
-        # We expect deleteContentRange for the paragraph's text (excluding trailing newline)
-        assert requests[0]["deleteContentRange"]["range"]["startIndex"] == 5
-        assert requests[0]["deleteContentRange"]["range"]["endIndex"] == 9  # endIndex-1
-        assert requests[1]["insertText"]["location"]["index"] == 5
+        # Expect deleteContentRange and insertText for paragraph 2
+        assert requests[0]["deleteContentRange"]["range"]["startIndex"] == 6
+        assert requests[0]["deleteContentRange"]["range"]["endIndex"] == 10  # endIndex-1
+        assert requests[1]["insertText"]["location"]["index"] == 6
         assert requests[1]["insertText"]["text"] == "new text"
 
 
@@ -234,10 +263,14 @@ async def test_docs_update_replace_paragraph(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_sheets_get_success(mock_db, user_id):
     with patch("app.google.sheets.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.spreadsheets().values().get().execute.return_value = {
+        mock_values = MagicMock()
+        mock_values.get.return_value.execute.return_value = {
             "values": [["Name", "Age"], ["Alice", 30], ["Bob", 25]]
         }
+        mock_sheets = MagicMock()
+        mock_sheets.values.return_value = mock_values
+        mock_client = MagicMock()
+        mock_client.spreadsheets.return_value = mock_sheets
         mock_get_client.return_value = mock_client
 
         result = await sheets_get(mock_db, user_id, "sheet123", range="A1:B3")
@@ -245,7 +278,7 @@ async def test_sheets_get_success(mock_db, user_id):
         assert result["spreadsheet_id"] == "sheet123"
         assert result["range"] == "A1:B3"
         assert result["values"] == [["Name", "Age"], ["Alice", 30], ["Bob", 25]]
-        mock_client.spreadsheets().values().get.assert_called_once_with(
+        mock_values.get.assert_called_once_with(
             spreadsheetId="sheet123",
             range="A1:B3",
         )
@@ -254,22 +287,28 @@ async def test_sheets_get_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_sheets_create_success(mock_db, user_id):
     with patch("app.google.sheets.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.spreadsheets().create().execute.return_value = {
+        mock_sheets = MagicMock()
+        mock_sheets.create.return_value.execute.return_value = {
             "spreadsheetId": "new_sheet_123",
             "properties": {"title": "Test Sheet"},
         }
+        mock_client = MagicMock()
+        mock_client.spreadsheets.return_value = mock_sheets
         mock_get_client.return_value = mock_client
+
+        # Also mock the values.update that happens inside create
+        mock_values = MagicMock()
+        mock_values.update.return_value.execute.return_value = {}
+        mock_sheets.values.return_value = mock_values
 
         result = await sheets_create(mock_db, user_id, "Test Sheet", headers=["Col1", "Col2"], rows=[["val1", "val2"]])
 
         assert result["spreadsheet_id"] == "new_sheet_123"
         assert result["title"] == "Test Sheet"
-        mock_client.spreadsheets().create.assert_called_once_with(
+        mock_sheets.create.assert_called_once_with(
             body={"properties": {"title": "Test Sheet"}}
         )
-        # Check that values.update was called with the headers+rows
-        mock_client.spreadsheets().values().update.assert_called_once_with(
+        mock_values.update.assert_called_once_with(
             spreadsheetId="new_sheet_123",
             range="A1",
             body={"values": [["Col1", "Col2"], ["val1", "val2"]]},
@@ -280,13 +319,17 @@ async def test_sheets_create_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_sheets_update_range_success(mock_db, user_id):
     with patch("app.google.sheets.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.spreadsheets().values().update().execute.return_value = {
+        mock_values = MagicMock()
+        mock_values.update.return_value.execute.return_value = {
             "updatedRange": "A1:B2",
             "updatedRows": 2,
             "updatedColumns": 2,
             "updatedCells": 4,
         }
+        mock_sheets = MagicMock()
+        mock_sheets.values.return_value = mock_values
+        mock_client = MagicMock()
+        mock_client.spreadsheets.return_value = mock_sheets
         mock_get_client.return_value = mock_client
 
         result = await sheets_update(
@@ -297,7 +340,7 @@ async def test_sheets_update_range_success(mock_db, user_id):
         assert result["spreadsheet_id"] == "sheet123"
         assert result["mode"] == "range"
         assert result["updated_range"] == "A1:B2"
-        mock_client.spreadsheets().values().update.assert_called_once_with(
+        mock_values.update.assert_called_once_with(
             spreadsheetId="sheet123",
             range="A1:B2",
             body={"values": [["x", "y"], ["z", "w"]]},
@@ -308,10 +351,14 @@ async def test_sheets_update_range_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_sheets_update_append_success(mock_db, user_id):
     with patch("app.google.sheets.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.spreadsheets().values().append().execute.return_value = {
+        mock_values = MagicMock()
+        mock_values.append.return_value.execute.return_value = {
             "updates": {"updatedRange": "Sheet1!A3", "updatedRows": 1}
         }
+        mock_sheets = MagicMock()
+        mock_sheets.values.return_value = mock_values
+        mock_client = MagicMock()
+        mock_client.spreadsheets.return_value = mock_sheets
         mock_get_client.return_value = mock_client
 
         result = await sheets_update(
@@ -320,7 +367,7 @@ async def test_sheets_update_append_success(mock_db, user_id):
         )
 
         assert result["mode"] == "append"
-        mock_client.spreadsheets().values().append.assert_called_once_with(
+        mock_values.append.assert_called_once_with(
             spreadsheetId="sheet123",
             range="Sheet1",
             body={"values": [["newrow"]]},
@@ -332,28 +379,29 @@ async def test_sheets_update_append_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_sheets_analyze_success(mock_db, user_id):
     with patch("app.google.sheets.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        # We mock the client's values().get() directly.
-        mock_client.spreadsheets().values().get().execute.return_value = {
+        mock_values = MagicMock()
+        mock_values.get.return_value.execute.return_value = {
             "values": [["Name", "Age", "Score"], ["Alice", 30, 85.5], ["Bob", 25, 90.0], ["Charlie", "N/A", 78]]
         }
+        mock_sheets = MagicMock()
+        mock_sheets.values.return_value = mock_values
+        mock_client = MagicMock()
+        mock_client.spreadsheets.return_value = mock_sheets
         mock_get_client.return_value = mock_client
 
-        result = await sheets_analyze(mock_db, user_id, "sheet123", "A1:C4")
+        result = await sheets_analyze(mock_db, user_id, "sheet123", range_str="A1:C4")
 
         assert result["spreadsheet_id"] == "sheet123"
-        assert result["range"] == "A1:C4"
-        assert result["row_count"] == 3  # data rows
+        assert result["range"] == "A1:C4"  # Note: the return dict still uses "range" key from get()
+        assert result["row_count"] == 3
         assert result["column_count"] == 3
 
-        # Check columns analysis: column 2 (Age) should have numeric analysis for rows with numbers
-        # We'll just check that the response has the right structure
         columns = result["columns"]
         assert len(columns) == 3
 
-        # Column 1 (Name) is not numeric
+        # Column 0 (Name) is not numeric
         assert columns[0]["is_numeric"] is False
-        # Column 2 (Age) has two numeric values (30, 25) and one null
+        # Column 1 (Age) has two numeric values (30, 25) and one null/string
         assert columns[1]["is_numeric"] is True
         assert columns[1]["min"] == 25
         assert columns[1]["max"] == 30
@@ -363,9 +411,14 @@ async def test_sheets_analyze_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_sheets_get_not_found(mock_db, user_id):
     with patch("app.google.sheets.get_google_client") as mock_get_client:
+        mock_values = MagicMock()
+        mock_values.get.return_value.execute.side_effect = HttpError(
+            resp=MagicMock(status=404), content=b'Not Found'
+        )
+        mock_sheets = MagicMock()
+        mock_sheets.values.return_value = mock_values
         mock_client = MagicMock()
-        error = HttpError(resp=MagicMock(status=404), content=b'Not Found')
-        mock_client.spreadsheets().values().get().execute.side_effect = error
+        mock_client.spreadsheets.return_value = mock_sheets
         mock_get_client.return_value = mock_client
 
         with pytest.raises(ValueError, match="Google Sheet not found: missing_sheet"):
@@ -379,16 +432,20 @@ async def test_sheets_get_not_found(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_gmail_search_success(mock_db, user_id):
     with patch("app.google.gmail.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.users().messages().list().execute.return_value = {
+        mock_messages = MagicMock()
+        mock_messages.list.return_value.execute.return_value = {
             "messages": [{"id": "msg1", "threadId": "th1"}, {"id": "msg2", "threadId": "th2"}]
         }
+        mock_users = MagicMock()
+        mock_users.messages.return_value = mock_messages
+        mock_client = MagicMock()
+        mock_client.users.return_value = mock_users
         mock_get_client.return_value = mock_client
 
         result = await gmail_search(mock_db, user_id, "from:john", max_results=5)
 
         assert result == [{"id": "msg1", "threadId": "th1"}, {"id": "msg2", "threadId": "th2"}]
-        mock_client.users().messages().list.assert_called_once_with(
+        mock_messages.list.assert_called_once_with(
             userId="me",
             q="from:john",
             maxResults=5,
@@ -398,19 +455,23 @@ async def test_gmail_search_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_gmail_get_success(mock_db, user_id):
     with patch("app.google.gmail.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.users().messages().get().execute.return_value = {
+        mock_messages = MagicMock()
+        mock_messages.get.return_value.execute.return_value = {
             "id": "msg123",
             "threadId": "th123",
             "snippet": "Hello world",
         }
+        mock_users = MagicMock()
+        mock_users.messages.return_value = mock_messages
+        mock_client = MagicMock()
+        mock_client.users.return_value = mock_users
         mock_get_client.return_value = mock_client
 
         result = await gmail_get(mock_db, user_id, "msg123")
 
         assert result["id"] == "msg123"
         assert result["threadId"] == "th123"
-        mock_client.users().messages().get.assert_called_once_with(
+        mock_messages.get.assert_called_once_with(
             userId="me",
             id="msg123",
             format="full",
@@ -420,11 +481,15 @@ async def test_gmail_get_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_gmail_create_draft_success(mock_db, user_id):
     with patch("app.google.gmail.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.users().drafts().create().execute.return_value = {
+        mock_drafts = MagicMock()
+        mock_drafts.create.return_value.execute.return_value = {
             "id": "draft456",
             "message": {"id": "msg456", "threadId": "th456"},
         }
+        mock_users = MagicMock()
+        mock_users.drafts.return_value = mock_drafts
+        mock_client = MagicMock()
+        mock_client.users.return_value = mock_users
         mock_get_client.return_value = mock_client
 
         result = await create_draft(mock_db, user_id, "test@example.com", "Subject", "Body")
@@ -432,9 +497,10 @@ async def test_gmail_create_draft_success(mock_db, user_id):
         assert result["draft_id"] == "draft456"
         assert result["message_id"] == "msg456"
         assert result["thread_id"] == "th456"
-        mock_client.users().drafts().create.assert_called_once()
-        # Check that the raw message is in the body
-        call_args = mock_client.users().drafts().create.call_args
+
+        # Verify the call
+        mock_drafts.create.assert_called_once()
+        call_args = mock_drafts.create.call_args
         assert call_args[1]["userId"] == "me"
         body = call_args[1]["body"]
         assert "message" in body
@@ -444,18 +510,22 @@ async def test_gmail_create_draft_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_gmail_send_draft_success(mock_db, user_id):
     with patch("app.google.gmail.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.users().drafts().send().execute.return_value = {
+        mock_drafts = MagicMock()
+        mock_drafts.send.return_value.execute.return_value = {
             "id": "sent789",
             "threadId": "th789",
         }
+        mock_users = MagicMock()
+        mock_users.drafts.return_value = mock_drafts
+        mock_client = MagicMock()
+        mock_client.users.return_value = mock_users
         mock_get_client.return_value = mock_client
 
         result = await send_draft(mock_db, user_id, "draft456")
 
         assert result["message_id"] == "sent789"
         assert result["thread_id"] == "th789"
-        mock_client.users().drafts().send.assert_called_once_with(
+        mock_drafts.send.assert_called_once_with(
             userId="me",
             body={"id": "draft456"},
         )
@@ -464,19 +534,23 @@ async def test_gmail_send_draft_success(mock_db, user_id):
 @pytest.mark.asyncio
 async def test_gmail_send_message_success(mock_db, user_id):
     with patch("app.google.gmail.get_google_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.users().messages().send().execute.return_value = {
+        mock_messages = MagicMock()
+        mock_messages.send.return_value.execute.return_value = {
             "id": "sent999",
             "threadId": "th999",
         }
+        mock_users = MagicMock()
+        mock_users.messages.return_value = mock_messages
+        mock_client = MagicMock()
+        mock_client.users.return_value = mock_users
         mock_get_client.return_value = mock_client
 
         result = await send_message(mock_db, user_id, "test@example.com", "Subject", "Body")
 
         assert result["message_id"] == "sent999"
         assert result["thread_id"] == "th999"
-        mock_client.users().messages().send.assert_called_once()
-        call_args = mock_client.users().messages().send.call_args
+        mock_messages.send.assert_called_once()
+        call_args = mock_messages.send.call_args
         assert call_args[1]["userId"] == "me"
         body = call_args[1]["body"]
         assert "raw" in body
@@ -484,12 +558,15 @@ async def test_gmail_send_message_success(mock_db, user_id):
 
 @pytest.mark.asyncio
 async def test_gmail_create_draft_not_found(mock_db, user_id):
-    # If Gmail service is unavailable, it could return 404 or something.
-    # We'll test that it raises ValueError on 404 (which we treat as service unavailable)
     with patch("app.google.gmail.get_google_client") as mock_get_client:
+        mock_drafts = MagicMock()
+        mock_drafts.create.return_value.execute.side_effect = HttpError(
+            resp=MagicMock(status=404), content=b'Not Found'
+        )
+        mock_users = MagicMock()
+        mock_users.drafts.return_value = mock_drafts
         mock_client = MagicMock()
-        error = HttpError(resp=MagicMock(status=404), content=b'Not Found')
-        mock_client.users().drafts().create().execute.side_effect = error
+        mock_client.users.return_value = mock_users
         mock_get_client.return_value = mock_client
 
         with pytest.raises(ValueError, match="Gmail service not available"):

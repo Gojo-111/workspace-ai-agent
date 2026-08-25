@@ -329,7 +329,7 @@ async def analyze(
     db: AsyncSession,
     user_id: UUID,
     spreadsheet_id: str,
-    range: str,
+    range_str: str,
 ) -> dict:
     """
     Analyze a range of cells in a Google Sheet.
@@ -338,7 +338,7 @@ async def analyze(
     for numeric columns (min, max, average, sum).
     """
     # First, get the data
-    sheet_data = await get(db, user_id, spreadsheet_id, range)
+    sheet_data = await get(db, user_id, spreadsheet_id, range_str)
     values = sheet_data.get("values", [])
 
     if not values:
