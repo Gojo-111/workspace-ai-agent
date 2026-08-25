@@ -105,3 +105,27 @@ async def get_google_user_info(access_token: str) -> dict:
         raise ValueError("Google userinfo response missing required fields")
 
     return user_info
+
+async def refresh_access_token(refresh_token: str) -> dict:
+    """Exchange a stored refresh token for a new Google access token."""
+    if not refresh_token:
+        raise ValueError("Refresh token is required")
+
+    data = {
+        "refresh_token": refresh_token,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "grant_type": "refresh_token",
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(GOOGLE_TOKEN_URL, data=data)
+
+    response.raise_for_status()
+
+    token_data = response.json()
+
+    if "access_token" not in token_data:
+        raise ValueError("Google refresh response did not contain an access token")
+
+    return token_data
